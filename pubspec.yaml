@@ -1,0 +1,21 @@
+name: nz_downloader
+description: NzTools - downloader media platform.
+publish_to: "none"
+version: 2.4.0+15
+
+environment:
+  sdk: ">=3.3.0 <4.0.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+  http: ^1.3.0
+  html: ^0.15.5
+  path_provider: ^2.1.5
+  video_player: ^2.9.2
+  audioplayers: ^6.2.0
+
+flutter:
+  uses-material-design: true
+  assets:
+    - assets/nz_logo.png

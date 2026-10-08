@@ -1,0 +1,45 @@
+plugins {
+    id "com.android.application"
+    id "org.jetbrains.kotlin.android"
+    id "dev.flutter.flutter-gradle-plugin"
+}
+
+android {
+    namespace = "com.nzwx.nzdownloader"
+    compileSdk = 36
+    ndkVersion = "28.2.13676358"
+
+    defaultConfig {
+        applicationId = "com.nzwx.nzdownloader"
+        minSdk = flutter.minSdkVersion
+        targetSdk = 36
+        versionCode = flutter.versionCode
+        versionName = flutter.versionName
+
+        // The target devices are modern ARM64 phones. Keeping one ABI in the APK
+        // prevents a large multi-architecture (fat) APK.
+        ndk {
+            abiFilters.clear()
+            abiFilters.add("arm64-v8a")
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
+    }
+
+    kotlinOptions {
+        jvmTarget = "17"
+    }
+
+    buildTypes {
+        release {
+            signingConfig = signingConfigs.debug
+        }
+    }
+}
+
+flutter {
+    source = "../.."
+}
