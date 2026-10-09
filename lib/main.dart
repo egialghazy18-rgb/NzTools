@@ -810,7 +810,50 @@ class _NzHomePageState extends State<NzHomePage> {
     }
   }
 
-  Widget _thumb(String url, {required double width, required double height}) => ClipRRect(borderRadius: BorderRadius.circular(10), child: Container(width: width, height: height, color: _soft, child: url.isEmpty ? const Icon(Icons.image_outlined, color: _muted) : Image.network(url, fit: BoxFit.cover, errorBuilder: (_, __, ___) => const Icon(Icons.image_not_supported_outlined, color: _muted))));
+  Widget _thumb(String url, {required double width, required double height}) {
+    final uri = Uri.tryParse(url.trim());
+    final valid = uri != null &&
+        (uri.scheme == 'https' || uri.scheme == 'http') &&
+        uri.host.isNotEmpty;
+
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(10),
+      child: Container(
+        width: width,
+        height: height,
+        color: _soft,
+        alignment: Alignment.center,
+        child: !valid
+            ? const Icon(Icons.image_outlined, color: _muted)
+            : Image.network(
+                uri.toString(),
+                width: width,
+                height: height,
+                fit: BoxFit.cover,
+                headers: {
+                  'User-Agent':
+                      'Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 Chrome/124.0.0.0 Mobile Safari/537.36',
+                  'Referer': 'https://www.instagram.com/',
+                },
+                loadingBuilder: (context, child, progress) {
+                  if (progress == null) return child;
+                  return const Center(
+                    child: SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: _muted,
+                      ),
+                    ),
+                  );
+                },
+                errorBuilder: (context, error, stackTrace) =>
+                    const Icon(Icons.image_not_supported_outlined, color: _muted),
+              ),
+      ),
+    );
+  }
 
   Widget _roundButton(IconData icon, VoidCallback onTap) => IconButton(onPressed: onTap, style: IconButton.styleFrom(backgroundColor: _card, side: const BorderSide(color: _softLine), shape: const CircleBorder()), icon: Icon(icon, size: 20, color: _ink));
 
@@ -860,60 +903,132 @@ class _InlineVideoPreviewState extends State<_InlineVideoPreview> {
   }
 
   Future<void> _prepare() async {
+    final uri = Uri.tryParse(widget.url);
+    if (uri == null || (uri.scheme != 'https' && uri.scheme != 'http')) {
+      if (mounted) {
+        setState(() {
+          caching = false;
+          error = 'URL video tidak valid.';
+        });
+      }
+      return;
+    }
+
+    VideoPlayerController? directController;
+
     try {
-      final dir = Directory('${Directory.systemTemp.path}/nzwx_preview');
-      if (!await dir.exists()) await dir.create(recursive: true);
-      final file = File('${dir.path}/${widget.url.hashCode.abs()}.mp4');
+      final dir = await getTemporaryDirectory();
+      final previewDir = Directory('${dir.path}/nzwx_preview');
+      if (!await previewDir.exists()) {
+        await previewDir.create(recursive: true);
+      }
+
+      final file = File(
+        '${previewDir.path}/${uri.toString().hashCode.abs()}.mp4',
+      );
 
       if (!await file.exists() || await file.length() < 1024) {
-        final client = HttpClient();
-        client.connectionTimeout = const Duration(seconds: 12);
+        final client = HttpClient()
+          ..connectionTimeout = const Duration(seconds: 10)
+          ..idleTimeout = const Duration(seconds: 15);
+
         try {
-          final request = await client.getUrl(Uri.parse(widget.url));
-          request.headers.set(HttpHeaders.userAgentHeader,
-              'Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 Chrome/124 Mobile Safari/537.36');
-          final response = await request.close().timeout(const Duration(seconds: 25));
+          final request = await client.getUrl(uri)
+              .timeout(const Duration(seconds: 12));
+          request.headers.set(
+            HttpHeaders.userAgentHeader,
+            'Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 '
+            '(KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36',
+          );
+
+          final response = await request.close()
+              .timeout(const Duration(seconds: 15));
+
           if (response.statusCode < 200 || response.statusCode >= 300) {
-            throw Exception('Preview server returned ${response.statusCode}');
+            await response.drain<void>();
+            throw Exception('Server preview HTTP ${response.statusCode}');
           }
+
           final total = response.contentLength;
-          final sink = file.openWrite();
           var received = 0;
-          await for (final chunk in response) {
-            sink.add(chunk);
-            received += chunk.length;
-            if (mounted && total > 0) {
-              setState(() => cacheProgress = received / total);
+          final sink = file.openWrite();
+
+          try {
+            await for (final chunk in response.timeout(
+              const Duration(seconds: 20),
+            )) {
+              sink.add(chunk);
+              received += chunk.length;
+
+              if (mounted && total > 0) {
+                setState(() {
+                  cacheProgress = (received / total).clamp(0.0, 1.0);
+                });
+              }
             }
+            await sink.flush();
+          } catch (_) {
+            await sink.close();
+            if (await file.exists()) await file.delete();
+            rethrow;
           }
-          await sink.flush();
           await sink.close();
+
+          if (total > 0 && received < total) {
+            if (await file.exists()) await file.delete();
+            throw Exception('Video belum terunduh lengkap.');
+          }
         } finally {
           client.close(force: true);
         }
       }
 
+      if (await file.length() < 1024) {
+        throw Exception('File preview kosong atau terlalu kecil.');
+      }
+
       cachedFile = file;
-      caching = false;
-      if (mounted) setState(() {});
-      final c = VideoPlayerController.file(file);
-      controller = c;
-      await c.initialize();
-      await c.setLooping(false);
-      if (mounted) setState(() {});
+      final localController = VideoPlayerController.file(file);
+      controller = localController;
+
+      await localController.initialize()
+          .timeout(const Duration(seconds: 15));
+      await localController.setLooping(false);
+
+      if (mounted) {
+        setState(() => caching = false);
+      }
+      return;
     } catch (_) {
-      // A local cache is preferred because it prevents CDN buffering/stalling.
-      // If caching fails, fall back to direct network playback.
       try {
-        final c = VideoPlayerController.networkUrl(Uri.parse(widget.url));
-        controller = c;
-        caching = false;
-        if (mounted) setState(() {});
-        await c.initialize();
-        await c.setLooping(false);
-        if (mounted) setState(() {});
+        await directController?.dispose();
+        directController = VideoPlayerController.networkUrl(
+          uri,
+          httpHeaders: {
+            'User-Agent':
+                'Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 '
+                '(KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36',
+            'Referer': 'https://www.instagram.com/',
+          },
+        );
+
+        controller = directController;
+        await directController.initialize()
+            .timeout(const Duration(seconds: 20));
+        await directController.setLooping(false);
+
+        if (mounted) {
+          setState(() => caching = false);
+        }
       } catch (e) {
-        if (mounted) setState(() { caching = false; error = e.toString(); });
+        await directController?.dispose();
+        if (mounted) {
+          setState(() {
+            controller = null;
+            caching = false;
+            error = 'Preview gagal dimuat. Periksa link atau coba lagi.';
+          });
+        }
       }
     }
   }
