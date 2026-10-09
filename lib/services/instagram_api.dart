@@ -81,7 +81,36 @@ class InstagramApi {
       req.headers.set(HttpHeaders.acceptHeader, 'application/json');
       final res = await req.close().timeout(const Duration(seconds: 45));
       final body = await utf8.decoder.bind(res).join();
-      final decoded = jsonDecode(body);
+      final contentType = res.headers.contentType?.mimeType ?? 'unknown';
+
+      if (contentType != 'application/json' &&
+          !body.trimLeft().startsWith('{') &&
+          !body.trimLeft().startsWith('[')) {
+        throw Exception(
+          'Backend mengembalikan non-JSON. '
+          'HTTP ${res.statusCode}, Content-Type: $contentType, '
+          'Endpoint: ${endpoint.path}',
+        );
+      }
+
+      dynamic decoded;
+      try {
+        decoded = jsonDecode(body);
+      } on FormatException {
+        final preview = body.trimLeft();
+        if (preview.startsWith('<!DOCTYPE') ||
+            preview.startsWith('<html') ||
+            preview.startsWith('<')) {
+          throw Exception(
+            'Backend mengirim HTML, bukan JSON. '
+            'Periksa URL endpoint dan deployment backend NzTools.'
+          );
+        }
+        throw Exception(
+          'Respons backend bukan JSON yang valid: '
+          '${preview.substring(0, preview.length > 160 ? 160 : preview.length)}'
+        );
+      }
       if (res.statusCode < 200 || res.statusCode >= 300) {
         throw Exception('${decoded is Map ? decoded['message'] ?? decoded['error'] : 'Instagram backend gagal'}');
       }
