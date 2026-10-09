@@ -53,7 +53,12 @@ class InstagramApi {
 
   static String _validMediaUrl(dynamic value) {
     if (value is! String || value.trim().isEmpty) return '';
-    final uri = Uri.tryParse(value.trim());
+
+    final normalized = value.trim()
+        .replaceAll(r'\/', '/')
+        .replaceAll(r'\\/', '/');
+
+    final uri = Uri.tryParse(normalized);
     if (uri == null ||
         (uri.scheme != 'https' && uri.scheme != 'http') ||
         uri.host.isEmpty) {
