@@ -3,6 +3,7 @@ const express = require('express');
 const cors = require('cors');
 const { scrape } = require('./scraper');
 const { resolveInstagram, validInstagramUrl } = require('./instagram_ytdlp');
+const { resolveInstagramEmbed } = require('./instagram_embed');
 const { resolveWithScrapr, detectPlatform } = require('./universal_scrapr');
 
 const app = express();
@@ -39,9 +40,18 @@ async function resolveUniversal(url) {
   if (platform === 'instagram') {
     try { return await resolveInstagram(clean); }
     catch (ytError) {
-      const viaScrapr = await resolveWithScrapr(clean);
-      if (viaScrapr) return viaScrapr;
-      throw new Error(`Instagram gagal di yt-dlp dan Scrapr: ${ytError.message || 'resolver tidak menemukan media'}`);
+      try {
+        const viaScrapr = await resolveWithScrapr(clean);
+        if (viaScrapr) return viaScrapr;
+      } catch (_) {}
+
+      try {
+        return await resolveInstagramEmbed(clean);
+      } catch (embedError) {
+        throw new Error(
+          `Instagram gagal di semua resolver: ${embedError.message || ytError.message || 'media tidak ditemukan'}`
+        );
+      }
     }
   }
 
@@ -81,9 +91,12 @@ app.get('/api/instagram/resolve', async (q, s) => {
     try {
       return s.json(await resolveInstagram(url));
     } catch (ytError) {
-      const viaScrapr = await resolveWithScrapr(url);
-      if (viaScrapr) return s.json(viaScrapr);
-      throw ytError;
+      try {
+        const viaScrapr = await resolveWithScrapr(url);
+        if (viaScrapr) return s.json(viaScrapr);
+      } catch (_) {}
+
+      return s.json(await resolveInstagramEmbed(url));
     }
   } catch (e) {
     s.status(502).json({ status: false, message: e.message });
