@@ -38,6 +38,30 @@ class InstagramApi {
       'Backend NzTools belum dihubungkan. Deploy folder backend (Docker) yang berisi yt-dlp + ffmpeg, lalu build APK dengan --dart-define=NZTOOLS_API_URL=https://domain-backend-kamu.');
   }
 
+  static String _authorText(dynamic value) {
+    if (value is String && value.trim().isNotEmpty) return value.trim();
+    if (value is Map) {
+      for (final key in ['username', 'user_name', 'name', 'full_name']) {
+        final candidate = value[key];
+        if (candidate is String && candidate.trim().isNotEmpty) {
+          return candidate.trim();
+        }
+      }
+    }
+    return 'Instagram';
+  }
+
+  static String _validMediaUrl(dynamic value) {
+    if (value is! String || value.trim().isEmpty) return '';
+    final uri = Uri.tryParse(value.trim());
+    if (uri == null ||
+        (uri.scheme != 'https' && uri.scheme != 'http') ||
+        uri.host.isEmpty) {
+      return '';
+    }
+    return uri.toString();
+  }
+
   static Future<Map<String, dynamic>> _fetchBackend(String url) async {
     final base = _backend.trim().replaceFirst(RegExp(r'/+$'), '');
     final endpoint = Uri.parse('$base/api/instagram/resolve').replace(
@@ -60,11 +84,32 @@ class InstagramApi {
         throw Exception('${decoded is Map ? decoded['message'] ?? decoded['error'] : 'Instagram backend gagal'}');
       }
       final r = Map<String, dynamic>.from(decoded['result'] ?? {});
-      final downloads = (r['downloads'] as List? ?? [])
-          .map((e) => Map<String, dynamic>.from(e as Map))
-          .toList();
-      if (downloads.isEmpty) throw Exception('yt-dlp tidak menemukan media.');
-      return {'status': true, 'result': {...r, 'platform': 'Instagram', 'downloads': downloads}};
+      final downloads = <Map<String, dynamic>>[];
+      final rawDownloads = r['downloads'];
+      if (rawDownloads is List) {
+        for (final item in rawDownloads) {
+          if (item is! Map) continue;
+          final map = Map<String, dynamic>.from(item);
+          final mediaUrl = _validMediaUrl(
+            map['url'] ?? map['link'] ?? map['src'],
+          );
+          if (mediaUrl.isEmpty) continue;
+          downloads.add({...map, 'url': mediaUrl});
+        }
+      }
+      if (downloads.isEmpty) {
+        throw Exception('Tidak ada URL media valid dari resolver Instagram.');
+      }
+      return {
+        'status': true,
+        'result': {
+          ...r,
+          'author': _authorText(r['author'] ?? r['uploader'] ?? r['user']),
+          'thumbnail': _validMediaUrl(r['thumbnail'] ?? r['thumb']),
+          'platform': 'Instagram',
+          'downloads': downloads,
+        },
+      };
     } finally {
       client.close(force: true);
     }
@@ -155,7 +200,7 @@ class InstagramApi {
     }
     if (downloads.isEmpty) throw Exception('Media Instagram tidak ditemukan.');
     final hasVideo = downloads.any((x) => x['type'] == 'video');
-    return {'status': true, 'result': {'title': '${data['title'] ?? raw['title'] ?? raw['caption'] ?? 'Instagram Content'}', 'author': '${data['author'] ?? 'Instagram'}', 'thumbnail': _cleanUrl('${data['thumbnail'] ?? data['thumb'] ?? data['cover'] ?? raw['thumbnail'] ?? ''}'), 'type': '${data['media_type'] ?? raw['type'] ?? (hasVideo ? 'video' : 'photo')}', 'platform': 'Instagram', 'downloads': downloads, 'source_url': '${data['source_url'] ?? sourceUrl}'}};
+    return {'status': true, 'result': {'title': '${data['title'] ?? raw['title'] ?? raw['caption'] ?? 'Instagram Content'}', 'author': _authorText(data['author'] ?? data['uploader'] ?? data['user']), 'thumbnail': _cleanUrl('${data['thumbnail'] ?? data['thumb'] ?? data['cover'] ?? raw['thumbnail'] ?? ''}'), 'type': '${data['media_type'] ?? raw['type'] ?? (hasVideo ? 'video' : 'photo')}', 'platform': 'Instagram', 'downloads': downloads, 'source_url': '${data['source_url'] ?? sourceUrl}'}};
   }
 
   static String? _extractToken(String html) {
@@ -165,7 +210,10 @@ class InstagramApi {
     return null;
   }
 
-  static String _cleanUrl(String value) => value.replaceAll(r'\/', '/').trim();
+  static String _cleanUrl(String value) {
+    final cleaned = value.replaceAll(r'\/', '/').trim();
+    return _validMediaUrl(cleaned);
+  }
   static bool _looksLikeVideo(String url) => RegExp(r'\.(mp4|m4v)(?:$|\?)', caseSensitive: false).hasMatch(url) || RegExp(r'(video|reel)', caseSensitive: false).hasMatch(url);
 }
 

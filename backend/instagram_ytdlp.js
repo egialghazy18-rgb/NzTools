@@ -24,6 +24,32 @@ function runYtDlp(args, timeoutMs = 60000) {
   });
 }
 
+
+function validMediaUrl(value) {
+  if (typeof value !== 'string' || !value.trim()) return false;
+  try {
+    const u = new URL(value.trim());
+    return (u.protocol === 'https:' || u.protocol === 'http:') &&
+      Boolean(u.hostname) &&
+      !u.hostname.startsWith('.') &&
+      !u.hostname.endsWith('.');
+  } catch (_) {
+    return false;
+  }
+}
+
+function authorName(value) {
+  if (typeof value === 'string' && value.trim()) return value.trim();
+  if (value && typeof value === 'object') {
+    for (const key of ['username', 'user_name', 'name', 'full_name']) {
+      if (typeof value[key] === 'string' && value[key].trim()) {
+        return value[key].trim();
+      }
+    }
+  }
+  return 'Instagram';
+}
+
 async function resolveInstagram(url) {
   if (!validInstagramUrl(url)) throw new Error('URL Instagram tidak valid.');
   const clean = String(url).trim().split('#')[0];
@@ -31,12 +57,12 @@ async function resolveInstagram(url) {
   const info = JSON.parse(raw);
   const formats = Array.isArray(info.formats) ? info.formats : [];
   const videos = formats
-    .filter(f => f && f.url && (f.vcodec && f.vcodec !== 'none'))
+    .filter(f => f && validMediaUrl(f.url) && (f.vcodec && f.vcodec !== 'none'))
     .filter(f => (f.ext === 'mp4' || !f.ext) && Number(f.width || 0) > 0)
     .sort((a,b) => (Number(b.width||0) * Number(b.height||0)) - (Number(a.width||0) * Number(a.height||0)));
   const best = videos[0] || info;
   const audio = formats
-    .filter(f => f && f.url && f.acodec && f.acodec !== 'none' && (!f.vcodec || f.vcodec === 'none'))
+    .filter(f => f && validMediaUrl(f.url) && f.acodec && f.acodec !== 'none' && (!f.vcodec || f.vcodec === 'none'))
     .sort((a,b) => Number(b.abr||0) - Number(a.abr||0))[0];
 
   const downloads = [];
@@ -47,14 +73,14 @@ async function resolveInstagram(url) {
     downloads.push({ url: audio.url, quality: `${Math.round(audio.abr || 0)}kbps`, type: 'music', label: 'Download Audio', audioOnly: true });
   }
 
-  if (!downloads.length && info.url) downloads.push({ url: info.url, quality: `${info.width || '?'}p`, type: 'video', label: 'Download Video', width: info.width || null, height: info.height || null });
+  if (!downloads.length && validMediaUrl(info.url)) downloads.push({ url: info.url, quality: `${info.width || '?'}p`, type: 'video', label: 'Download Video', width: info.width || null, height: info.height || null });
   if (!downloads.length) throw new Error('yt-dlp tidak menemukan media yang dapat diunduh.');
 
   return {
     status: true,
     result: {
       title: info.title || 'Instagram Content',
-      author: info.uploader || info.channel || 'Instagram',
+      author: authorName(info.uploader || info.channel || info.creator),
       thumbnail: info.thumbnail || '',
       type: info._type === 'image' ? 'photo' : 'video',
       platform: 'Instagram',
