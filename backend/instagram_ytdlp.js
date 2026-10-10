@@ -19,8 +19,19 @@ function run(command, args, timeoutMs = 180000) {
     let settled = false;
 
     const timer = setTimeout(() => {
-      child.kill('SIGKILL');
-      finish(new Error(`${command} timeout`));
+      // Restricted hosts may reject process signals.
+      let killError = null;
+      try {
+        if (child.exitCode === null && child.signalCode === null) {
+          child.kill('SIGKILL');
+        }
+      } catch (err) {
+        killError = err;
+      }
+      const suffix = killError
+        ? `; kill failed: ${killError.message}`
+        : '';
+      finish(new Error(`${command} timeout${suffix}`));
     }, timeoutMs);
 
     function finish(err, output) {
@@ -70,7 +81,24 @@ function cleanOldJobs() {
   }
 }
 
+let instagramResolveBusy = false;
+
 async function resolveInstagram(url) {
+  if (instagramResolveBusy) {
+    throw new Error(
+      'Resolver Instagram sedang memproses unduhan lain. Coba lagi sebentar.'
+    );
+  }
+
+  instagramResolveBusy = true;
+  try {
+    return await resolveInstagramJob(url);
+  } finally {
+    instagramResolveBusy = false;
+  }
+}
+
+async function resolveInstagramJob(url) {
   if (!validInstagramUrl(url)) throw new Error('URL Instagram tidak valid.');
 
   const clean = String(url).trim().split('#')[0];
