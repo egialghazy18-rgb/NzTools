@@ -16,7 +16,7 @@ app.get('/health', (_q, s) => s.json({
   status: true,
   service: 'NzTools API',
   version: '2.4.1',
-  engine: 'yt-dlp Instagram primary + Scrapr fallback',
+  engine: 'Scrapr Instagram primary + embed fallback',
 }));
 
 async function resolveUniversal(url) {
@@ -35,24 +35,21 @@ async function resolveUniversal(url) {
 
   const platform = detectPlatform(clean);
 
-  // Prefer yt-dlp for Instagram: it exposes the actual formats/qualities and
-  // avoids relying on one third-party HTML downloader.
+  // Keep Instagram lightweight on low-memory hosting: Scrapr first.
   if (platform === 'instagram') {
-    try { return await resolveInstagram(clean); }
-    catch (ytError) {
-      console.error('Instagram yt-dlp gagal:', ytError.message);
-      try {
-        const viaScrapr = await resolveWithScrapr(clean);
-        if (viaScrapr) return viaScrapr;
-      } catch (_) {}
+    try {
+      const viaScrapr = await resolveWithScrapr(clean);
+      if (viaScrapr) return viaScrapr;
+    } catch (scraprError) {
+      console.error('Instagram Scrapr gagal:', scraprError.message);
+    }
 
-      try {
-        return await resolveInstagramEmbed(clean);
-      } catch (embedError) {
-        throw new Error(
-          `Instagram gagal di semua resolver: ${embedError.message || ytError.message || 'media tidak ditemukan'}`
-        );
-      }
+    try {
+      return await resolveInstagramEmbed(clean);
+    } catch (embedError) {
+      throw new Error(
+        `Instagram gagal di semua resolver: ${embedError.message || 'media tidak ditemukan'}`
+      );
     }
   }
 
@@ -103,19 +100,15 @@ app.get('/api/instagram/resolve', async (q, s) => {
   try {
     const url = String(q.query.url || '').trim();
     if (!validInstagramUrl(url)) return s.status(400).json({ status: false, message: 'URL Instagram tidak valid.' });
-    // Dedicated Instagram route deliberately uses yt-dlp first. Scrapr is a
-    // fallback if yt-dlp cannot resolve a public post/reel.
+    // Keep the dedicated Instagram route lightweight on low-memory hosting.
     try {
-      return s.json(await resolveInstagram(url));
-    } catch (ytError) {
-      console.error('Instagram yt-dlp gagal:', ytError.message);
-      try {
-        const viaScrapr = await resolveWithScrapr(url);
-        if (viaScrapr) return s.json(viaScrapr);
-      } catch (_) {}
-
-      return s.json(await resolveInstagramEmbed(url));
+      const viaScrapr = await resolveWithScrapr(url);
+      if (viaScrapr) return s.json(viaScrapr);
+    } catch (scraprError) {
+      console.error('Instagram Scrapr gagal:', scraprError.message);
     }
+
+    return s.json(await resolveInstagramEmbed(url));
   } catch (e) {
     s.status(502).json({ status: false, message: e.message });
   }
