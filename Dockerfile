@@ -18,4 +18,4 @@ ENV PATH="/usr/local/bin:/usr/bin:/bin"
 
 EXPOSE 3000
 
-CMD ["npm", "start"]
+CMD ["node", "server.js"]
