@@ -1,47 +1,42 @@
 name: Build NzTools APK
 
 on:
-workflow_dispatch:
-push:
-branches: [main]
-paths:
-- 'lib/'
-- 'android/'
-- 'assets/**'
-- 'pubspec.yaml'
-- 'pubspec.lock'
-- '.github/workflows/build-apk.yml'
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'lib/**'
+      - 'android/**'
+      - 'assets/**'
+      - 'pubspec.yaml'
+      - 'pubspec.lock'
+      - '.github/workflows/build-apk.yml'
 
 permissions:
-contents: read
+  contents: read
 
 jobs:
-build:
-runs-on: ubuntu-latest
-steps:
-- name: Checkout repository
-uses: actions/checkout@v4
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
-  - name: Set up Flutter
-    uses: subosito/flutter-action@v2
-    with:
-      channel: stable
-      cache: true
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
 
-  - name: Install Android NDK
-    run: |
-      yes | "$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" --uninstall "ndk;28.2.13676358" || true
-      yes | "$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" --install "ndk;28.2.13676358"
+      - name: Install dependencies
+        run: flutter pub get
 
-  - name: Install dependencies
-    run: flutter pub get
+      - name: Build debug APK
+        run: flutter build apk --debug --dart-define=NZTOOLS_API_URL=https://nztools-api.de.deplexo.com
 
-  - name: Build debug APK
-    run: flutter build apk --debug --dart-define=NZTOOLS_API_URL=https://nztools-api.de.deplexo.com
-
-  - name: Upload APK
-    uses: actions/upload-artifact@v4
-    with:
-      name: NzTools-debug-apk
-      path: build/app/outputs/flutter-apk/app-debug.apk
-      if-no-files-found: error
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: NzTools-debug-apk
+          path: build/app/outputs/flutter-apk/app-debug.apk
+          if-no-files-found: error
