@@ -40,6 +40,7 @@ async function resolveUniversal(url) {
   if (platform === 'instagram') {
     try { return await resolveInstagram(clean); }
     catch (ytError) {
+      console.error('Instagram yt-dlp gagal:', ytError.message);
       try {
         const viaScrapr = await resolveWithScrapr(clean);
         if (viaScrapr) return viaScrapr;
@@ -107,6 +108,7 @@ app.get('/api/instagram/resolve', async (q, s) => {
     try {
       return s.json(await resolveInstagram(url));
     } catch (ytError) {
+      console.error('Instagram yt-dlp gagal:', ytError.message);
       try {
         const viaScrapr = await resolveWithScrapr(url);
         if (viaScrapr) return s.json(viaScrapr);
