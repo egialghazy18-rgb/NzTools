@@ -2,7 +2,7 @@
 const express = require('express');
 const cors = require('cors');
 const { scrape } = require('./scraper');
-const { resolveInstagram, validInstagramUrl } = require('./instagram_ytdlp');
+const { resolveInstagram, validInstagramUrl, getInstagramFile } = require('./instagram_ytdlp');
 const { resolveInstagramEmbed } = require('./instagram_embed');
 const { resolveWithScrapr, detectPlatform } = require('./universal_scrapr');
 
@@ -81,6 +81,22 @@ for (const path of ['/api/tiktok', '/api/resolve']) {
     }
   });
 }
+
+app.get('/api/instagram/file/:id/:kind', (q, s) => {
+  const file = getInstagramFile(q.params.id, q.params.kind);
+  if (!file) {
+    return s.status(404).json({ status: false, message: 'File tidak ditemukan atau sudah kedaluwarsa. Resolve ulang URL Instagram.' });
+  }
+
+  s.setHeader('Content-Type', file.mime);
+  s.setHeader('Content-Disposition', `attachment; filename="${file.name}"`);
+  s.setHeader('X-Content-Type-Options', 'nosniff');
+  return s.sendFile(file.path, err => {
+    if (err && !s.headersSent) {
+      s.status(500).json({ status: false, message: 'Gagal mengirim file.' });
+    }
+  });
+});
 
 app.get('/api/instagram/resolve', async (q, s) => {
   try {
