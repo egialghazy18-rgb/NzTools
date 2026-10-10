@@ -78,7 +78,20 @@ function normalize(platform, response, sourceUrl) {
     status: true,
     result: {
       title: String(r.title || r.caption || `${platform} media`),
-      author: String(r.author || r.uploader || r.username || platform),
+      author: (() => {
+      const a = r.author || r.uploader || r.username;
+      if (typeof a === 'string' && a.trim() && a !== '[object Object]') {
+        return a.trim().replace(/^@+/, '');
+      }
+      if (a && typeof a === 'object') {
+        for (const k of ['username', 'user_name', 'name', 'full_name']) {
+          if (typeof a[k] === 'string' && a[k].trim()) {
+            return a[k].trim().replace(/^@+/, '');
+          }
+        }
+      }
+      return platform;
+    })(),
       thumbnail: String(r.thumbnail || r.thumb || r.cover || ''),
       type: String(r.type || (downloads.some(x => x.type === 'photo') ? 'photo' : 'video')),
       platform: platform[0].toUpperCase() + platform.slice(1),
